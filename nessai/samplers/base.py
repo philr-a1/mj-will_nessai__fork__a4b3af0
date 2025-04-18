@@ -212,17 +212,17 @@ class BaseNestedSampler(ABC):
         """
         self.logging_interval = logging_interval
         self.log_on_iteration = log_on_iteration
+        
         if not self.logging_interval and not self.log_on_iteration:
             logger.warning(
                 "All logging disabled. Enabling logging on iteration"
             )
             self.log_on_iteration = True
-        if self.log_on_iteration:
-            if self.logging_interval is None:
-                self.logging_interval = self.nlive
-            self._last_log = 0
-        else:
-            self._last_log = time.time()
+            
+        if self.log_on_iteration and self.logging_interval is None:
+            self.logging_interval = self.nlive
+            
+        self._last_log = 0 if self.log_on_iteration else time.time()
 
     @abstractmethod
     def log_state(self):
@@ -237,14 +237,13 @@ class BaseNestedSampler(ABC):
         if self.log_on_iteration:
             if not (self.iteration - self._last_log) >= self.logging_interval:
                 return
-            else:
-                self._last_log = self.iteration
+            self._last_log = self.iteration
         else:
             now = time.time()
             if not (now - self._last_log) >= self.logging_interval:
                 return
-            else:
-                self._last_log = now
+            self._last_log = now
+            
         self.log_state()
 
     def initialise_history(self) -> None:
@@ -289,6 +288,7 @@ class BaseNestedSampler(ABC):
             If False, the new checkpoint will override the previous file.
         """
         now = datetime.datetime.now()
+        
         if not periodic:
             if self.history:
                 self.history["checkpoint_iterations"] += [self.iteration]
@@ -299,22 +299,21 @@ class BaseNestedSampler(ABC):
         elif force:
             pass
         else:
+            # For iteration-based checkpointing
             if self.checkpoint_on_iteration:
-                if (
-                    self.iteration - self._last_checkpoint
-                ) >= self.checkpoint_interval:
-                    self._last_checkpoint = self.iteration
-                else:
+                if (self.iteration - self._last_checkpoint) < self.checkpoint_interval:
                     return
+                self._last_checkpoint = self.iteration
+            # For time-based checkpointing
             else:
-                if (
-                    now - self._last_checkpoint
-                ).total_seconds() >= self.checkpoint_interval:
-                    self._last_checkpoint = now
-                else:
+                if (now - self._last_checkpoint).total_seconds() < self.checkpoint_interval:
                     return
+                self._last_checkpoint = now
+                
+        # Perform the checkpoint
         self.sampling_time += now - self.sampling_start_time
         logger.info("Checkpointing nested sampling")
+        
         if self.checkpoint_callback:
             self.checkpoint_callback(self)
         else:
